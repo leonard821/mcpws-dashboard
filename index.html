@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MCPWS 存储芯片周期极值预警系统 v2.2</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; color: #333; padding: 20px; }
+    .header { text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; margin-bottom: 20px; }
+    .header h1 { font-size: 24px; margin-bottom: 8px; }
+    .header .timestamp { font-size: 14px; opacity: 0.9; }
+    .alert-banner { padding: 16px; background: #fee; border: 2px solid #f00; border-radius: 8px; margin-bottom: 20px; text-align: center; }
+    .alert-banner.critical { background: #f00; color: white; }
+    .section { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .section h2 { font-size: 20px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #eee; }
+    .cards-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 16px; }
+    .indicator-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; }
+    .indicator-card.green { border-left: 4px solid #4caf50; }
+    .indicator-card.red { border-left: 4px solid #f44336; }
+    .indicator-card.yellow { border-left: 4px solid #ff9800; }
+    .indicator-card.unknown { border-left: 4px solid #9e9e9e; }
+    .indicator-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .indicator-id { font-weight: bold; color: #666; }
+    .indicator-name { font-weight: 600; }
+    .status-badge { padding: 4px 12px; border-radius: 16px; font-size: 12px; font-weight: 600; }
+    .status-badge.green { background: #e8f5e9; color: #2e7d32; }
+    .status-badge.red { background: #ffebee; color: #c62828; }
+    .status-badge.yellow { background: #fff3e0; color: #e65100; }
+    .status-badge.unknown { background: #f5f5f5; color: #757575; }
+    .current-value { font-size: 18px; font-weight: 600; margin-bottom: 12px; }
+    .comparisons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .comparison-row { display: flex; justify-content: space-between; padding: 4px 8px; background: #f9f9f9; border-radius: 4px; }
+    .comparison-row .label { color: #666; font-size: 13px; }
+    .comparison-row .value { font-weight: 600; }
+    .trend { margin-bottom: 8px; color: #555; }
+    .meta { display: flex; justify-content: space-between; font-size: 12px; color: #999; }
+    .meta a { color: #667eea; text-decoration: none; }
+    .meta a:hover { text-decoration: underline; }
+    .missing-data { color: #999; font-style: italic; padding: 12px; text-align: center; background: #f9f9f9; border-radius: 4px; }
+    .data-section { margin-bottom: 20px; }
+    .data-section h3 { margin-bottom: 8px; }
+    .data-source { font-size: 12px; color: #999; margin-top: 8px; }
+    .data-source a { color: #667eea; text-decoration: none; }
+    .data-source a:hover { text-decoration: underline; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+    th, td { padding: 8px 12px; text-align: left; border: 1px solid #e0e0e0; }
+    th { background: #f5f5f5; font-weight: 600; }
+    .chart-container { margin-bottom: 20px; }
+    .chart-placeholder { color: #999; text-align: center; padding: 40px; background: #f9f9f9; border-radius: 8px; }
+    .news-item { padding: 12px; border-bottom: 1px solid #eee; }
+    .source-tag { font-size: 12px; margin-right: 8px; }
+    .news-title { font-weight: 600; }
+    .news-meta { font-size: 12px; color: #999; margin-left: 8px; }
+    .news-summary { font-size: 13px; color: #666; margin-top: 4px; }
+    .ai-analysis { line-height: 1.8; }
+    .analysis-section { margin-bottom: 16px; }
+    .analysis-section h3 { margin-bottom: 8px; color: #555; }
+    .rating { font-size: 18px; font-weight: 700; color: #4caf50; }
+    .disclaimer { font-size: 12px; color: #999; margin-top: 16px; padding: 12px; background: #f9f9f9; border-radius: 4px; }
+    .health-table { width: 100%; }
+    .health-table td { padding: 8px 12px; }
+    .comparison-item { padding: 12px; margin-bottom: 8px; border-radius: 4px; }
+    .comparison-item.changed { background: #fff3e0; }
+    .comparison-item.unchanged { background: #e8f5e9; }
+    .comparison-item.missing { background: #ffebee; }
+    .comparison-item.new { background: #e3f2fd; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>MCPWS 存储芯片周期极值预警系统 v2.2</h1>
+    <div class="timestamp">生成时间: 2026-05-16 17:48 (UTC+8)</div>
+  </div>
+
+  
+
+  <div class="section">
+    <h2>📊 板块一：关键指标速览</h2>
+    <div class="cards-grid">
+      
+<div class="indicator-card green">
+  <div class="indicator-header">
+    <span class="indicator-id">FR01</span>
+    <span class="indicator-name">云巨头 CAPEX</span>
+    <span class="status-badge green">🟢 GREEN</span>
+  </div>
+  <div class="indicator-body">
+    <div class="current-value">当前值: 67.2 B USD</div>
+    <div class="comparisons">
+      <div class="comparison-row">
+        <span class="label">环比 (QoQ):</span>
+        <span class="value">+9.27%</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">同比 (YoY):</span>
+        <span class="value">+17.28%</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">vs N 期均值:</span>
+        <span class="value">+9.27%</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">年度对比:</span>
+        <span class="value">+17.28%</span>
+      </div>
+    </div>
+    <div class="trend">📈 趋势: 连续增长</div>
+    <div class="meta">
+      <span>🏷️ 数据来源: <a href="https://financialmodelingprep.com/developer/docs/" target="_blank">FMP API</a></span>
+      <span>📅 采集日期: 2026-05-16 17:46</span>
+    </div>
+  </div>
+</div>
+<div class="indicator-card green">
+  <div class="indicator-header">
+    <span class="indicator-id">FR02</span>
+    <span class="indicator-name">CoWoS 交期</span>
+    <span class="status-badge green">🟢 GREEN</span>
+  </div>
+  <div class="indicator-body">
+    <div class="current-value">当前值: 18 周 (最短交期)</div>
+    <div class="comparisons">
+      <div class="comparison-row">
+        <span class="label">环比 (QoQ):</span>
+        <span class="value">-2 周</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">同比 (YoY):</span>
+        <span class="value">-6 周</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">vs N 期均值:</span>
+        <span class="value">-3 周</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">年度对比:</span>
+        <span class="value">N/A</span>
+      </div>
+    </div>
+    <div class="trend">📈 趋势: 交期持续缩短</div>
+    <div class="meta">
+      <span>🏷️ 数据来源: <a href="https://www.digitimes.com/" target="_blank">DigiTimes</a></span>
+      <span>📅 采集日期: 2026-05-16 17:46</span>
+    </div>
+  </div>
+</div>
+<div class="indicator-card green">
+  <div class="indicator-header">
+    <span class="indicator-id">FR03</span>
+    <span class="indicator-name">DDR5 价格剪刀差</span>
+    <span class="status-badge green">🟢 GREEN</span>
+  </div>
+  <div class="indicator-body">
+    <div class="current-value">当前值: 5.20 USD (Spot)</div>
+    <div class="comparisons">
+      <div class="comparison-row">
+        <span class="label">环比 (QoQ):</span>
+        <span class="value">+0.05</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">同比 (YoY):</span>
+        <span class="value">+0.40</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">vs N 期均值:</span>
+        <span class="value">+0.10</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">年度对比:</span>
+        <span class="value">N/A</span>
+      </div>
+    </div>
+    <div class="trend">📈 趋势: 现货溢价稳定</div>
+    <div class="meta">
+      <span>🏷️ 数据来源: <a href="https://www.dramexchange.com/" target="_blank">DRAMeXchange</a></span>
+      <span>📅 采集日期: 2026-05-16 17:46</span>
+    </div>
+  </div>
+</div>
+<div class="indicator-card green">
+  <div class="indicator-header">
+    <span class="indicator-id">FR04</span>
+    <span class="indicator-name">OEM库存周转</span>
+    <span class="status-badge green">🟢 GREEN</span>
+  </div>
+  <div class="indicator-body">
+    <div class="current-value">当前值: 10.6 天 (平均)</div>
+    <div class="comparisons">
+      <div class="comparison-row">
+        <span class="label">环比 (QoQ):</span>
+        <span class="value">N/A</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">同比 (YoY):</span>
+        <span class="value">N/A</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">vs N 期均值:</span>
+        <span class="value">N/A</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">年度对比:</span>
+        <span class="value">N/A</span>
+      </div>
+    </div>
+    <div class="trend">📈 趋势: 库存去化</div>
+    <div class="meta">
+      <span>🏷️ 数据来源: <a href="https://financialmodelingprep.com/developer/docs/" target="_blank">FMP API</a></span>
+      <span>📅 采集日期: 2026-05-16 17:46</span>
+    </div>
+  </div>
+</div>
+<div class="indicator-card green">
+  <div class="indicator-header">
+    <span class="indicator-id">FR05</span>
+    <span class="indicator-name">容量降级舆情</span>
+    <span class="status-badge green">🟢 GREEN</span>
+  </div>
+  <div class="indicator-body">
+    <div class="current-value">当前值: 1 条负面新闻</div>
+    <div class="comparisons">
+      <div class="comparison-row">
+        <span class="label">环比 (QoQ):</span>
+        <span class="value">+1</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">同比 (YoY):</span>
+        <span class="value">N/A</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">vs N 期均值:</span>
+        <span class="value">N/A</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">年度对比:</span>
+        <span class="value">N/A</span>
+      </div>
+    </div>
+    <div class="trend">📈 趋势: 平稳</div>
+    <div class="meta">
+      <span>🏷️ 数据来源: <a href="https://www.reuters.com/technology/" target="_blank">Reuters Technology</a></span>
+      <span>📅 采集日期: 2026-05-16 17:46</span>
+    </div>
+  </div>
+</div>
+<div class="indicator-card green">
+  <div class="indicator-header">
+    <span class="indicator-id">FR06</span>
+    <span class="indicator-name">韩国半导体出口</span>
+    <span class="status-badge green">🟢 GREEN</span>
+  </div>
+  <div class="indicator-body">
+    <div class="current-value">当前值: 12.8 B USD</div>
+    <div class="comparisons">
+      <div class="comparison-row">
+        <span class="label">环比 (QoQ):</span>
+        <span class="value">+5.8%</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">同比 (YoY):</span>
+        <span class="value">+33.8%</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">vs N 期均值:</span>
+        <span class="value">+8.5%</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">年度对比:</span>
+        <span class="value">N/A</span>
+      </div>
+    </div>
+    <div class="trend">📈 趋势: 出口强劲增长</div>
+    <div class="meta">
+      <span>🏷️ 数据来源: <a href="https://fred.stlouisfed.org/series/" target="_blank">FRED</a></span>
+      <span>📅 采集日期: 2026-05-16 17:48</span>
+    </div>
+  </div>
+</div>
+<div class="indicator-card green">
+  <div class="indicator-header">
+    <span class="indicator-id">FR07</span>
+    <span class="indicator-name">量价背离</span>
+    <span class="status-badge green">🟢 GREEN</span>
+  </div>
+  <div class="indicator-body">
+    <div class="current-value">当前值: EPSΔ: +5.2%, PriceΔ: -3.1% </div>
+    <div class="comparisons">
+      <div class="comparison-row">
+        <span class="label">环比 (QoQ):</span>
+        <span class="value">N/A</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">同比 (YoY):</span>
+        <span class="value">N/A</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">vs N 期均值:</span>
+        <span class="value">N/A</span>
+      </div>
+      <div class="comparison-row">
+        <span class="label">年度对比:</span>
+        <span class="value">N/A</span>
+      </div>
+    </div>
+    <div class="trend">📈 趋势: 量价背离度中等</div>
+    <div class="meta">
+      <span>🏷️ 数据来源: <a href="https://akshare.akfamily.xyz/" target="_blank">AkShare</a></span>
+      <span>📅 采集日期: 2026-05-16 17:48</span>
+    </div>
+  </div>
+</div>
+    </div>
+  </div>
+
+  <div class="section">
+    
+<div class="ai-analysis">
+  <h2>🔍 关键发现</h2>
+  <div class="analysis-section">
+    <h3>📌 行业周期判断</h3>
+    <p>综合 7 个指标判断，存储芯片行业仍处于上行周期。</p>
+  </div>
+  <div class="analysis-section">
+    <h3>📌 SK Hynix 专项分析</h3>
+    <p>SK Hynix 作为 HBM 市场领导者直接受益于 AI 算力需求。</p>
+  </div>
+  <div class="analysis-section">
+    <h3>📌 风险提示</h3>
+    <p>建议持续监控各指标变化。</p>
+  </div>
+  <div class="analysis-section">
+    <h3>📊 综合评级</h3>
+    <p class="rating">看好</p>
+  </div>
+  <p class="disclaimer">⚠️ 以上分析基于 MCPWS 数据系统自动生成，不构成投资建议。</p>
+</div>
+  </div>
+
+  <div class="section">
+    <h2>📋 板块三：原始数据明细</h2>
+    
+<div class="data-section">
+  <h3>FR01: 云巨头 CAPEX</h3>
+  <table><tr><th>公司</th><th>本季度</th><th>上季度</th><th>去年同季</th><th>4 季均值</th></tr>
+<tr><td>MSFT</td><td>$14.2B</td><td>$13.0B</td><td>$12.6B</td><td>$13.1B</td></tr>
+<tr><td>GOOGL</td><td>$13.1B</td><td>$12.1B</td><td>$11.7B</td><td>$12.0B</td></tr>
+<tr><td>AMZN</td><td>$22.5B</td><td>$20.5B</td><td>$18.7B</td><td>$19.8B</td></tr>
+<tr><td>META</td><td>$17.4B</td><td>$15.9B</td><td>$14.3B</td><td>$15.2B</td></tr>
+<tr><td><b>总和</b></td><td><b>$67.2B</b></td><td><b>$61.5B</b></td><td><b>$57.3B</b></td><td><b>$60.1B</b></td></tr></table>
+  <div class="data-source">
+    数据来源: <a href="https://financialmodelingprep.com/developer/docs/" target="_blank">FMP API</a> | 采集日期: 2026-05-16 17:46
+  </div>
+</div>
+<div class="data-section">
+  <h3>FR02: CoWoS 交期</h3>
+  <table><tr><th>指标</th><th>当前</th><th>上周</th><th>4 周均值</th></tr>
+<tr><td>最短交期</td><td>18 周</td><td>20 周</td><td>21 周</td></tr>
+<tr><td>平均交期</td><td>22 周</td><td>24 周</td><td>25 周</td></tr></table>
+  <div class="data-source">
+    数据来源: <a href="https://www.digitimes.com/" target="_blank">DigiTimes</a> | 采集日期: 2026-05-16 17:46
+  </div>
+</div>
+<div class="data-section">
+  <h3>FR03: DDR5 价格剪刀差</h3>
+  <table><tr><th>指标</th><th>本周</th><th>上周</th><th>去年同周</th><th>4 周均值</th></tr>
+<tr><td>Spot</td><td>$5.20</td><td>$5.15</td><td>$4.80</td><td>$5.10</td></tr>
+<tr><td>Contract</td><td>$4.90</td><td>$4.85</td><td>$4.60</td><td>$4.80</td></tr>
+<tr><td>Spread</td><td>+6.1%</td><td>+6.2%</td><td>+4.3%</td><td>+6.3%</td></tr></table>
+  <div class="data-source">
+    数据来源: <a href="https://www.dramexchange.com/" target="_blank">DRAMeXchange</a> | 采集日期: 2026-05-16 17:46
+  </div>
+</div>
+<div class="data-section">
+  <h3>FR04: OEM库存周转</h3>
+  <table><tr><th>公司</th><th>本季度</th><th>上季度</th><th>去年同季</th><th>4 季均值</th></tr>
+<tr><td>AAPL</td><td>8.2 天</td><td>9.1 天</td><td>10.5 天</td><td>9.5 天</td></tr>
+<tr><td>CSCO</td><td>11.5 天</td><td>12.2 天</td><td>13.1 天</td><td>12.3 天</td></tr>
+<tr><td>SONY</td><td>取不到数据</td><td>取不到数据</td><td>取不到数据</td><td>取不到数据</td></tr>
+<tr><td><b>平均</b></td><td><b>10.6 天</b></td><td><b>11.4 天</b></td><td><b>12.4 天</b></td><td><b>11.6 天</b></td></tr></table>
+  <div class="data-source">
+    数据来源: <a href="https://financialmodelingprep.com/developer/docs/" target="_blank">FMP API</a> | 采集日期: 2026-05-16 17:46
+  </div>
+</div>
+<div class="data-section">
+  <h3>FR05: 容量降级舆情</h3>
+  <table><tr><th>指标</th><th>本周</th><th>上周</th></tr>
+<tr><td>负面次数</td><td>1 条</td><td>2 条</td></tr>
+<tr><td>平均 Sev</td><td>2.8</td><td>3.1</td></tr></table>
+  <div class="data-source">
+    数据来源: <a href="https://www.reuters.com/technology/" target="_blank">Reuters Technology</a> | 采集日期: 2026-05-16 17:46
+  </div>
+</div>
+<div class="data-section">
+  <h3>FR06: 韩国半导体出口</h3>
+  <table><tr><th>指标</th><th>本月</th><th>上月</th></tr><tr><td>出口额</td><td>$12.8B</td><td>$12.1B</td></tr></table>
+  <div class="data-source">
+    数据来源: <a href="https://fred.stlouisfed.org/series/" target="_blank">FRED</a> | 采集日期: 2026-05-16 17:48
+  </div>
+</div>
+<div class="data-section">
+  <h3>FR07: 量价背离</h3>
+  <table><tr><th>指标</th><th>本周</th><th>上周</th><th>4 周均值</th></tr>
+<tr><td>EPSΔ</td><td>+5.2%</td><td>+4.8%</td><td>+4.0%</td></tr>
+<tr><td>PriceΔ</td><td>-3.1%</td><td>-2.8%</td><td>-2.0%</td></tr></table>
+  <div class="data-source">
+    数据来源: <a href="https://akshare.akfamily.xyz/" target="_blank">AkShare</a> | 采集日期: 2026-05-16 17:48
+  </div>
+</div>
+<div class="section">
+  <h2>🔄 版本对比</h2>
+  <div class="comparison-item unchanged">所有指标无变化</div>
+</div>
+  </div>
+
+  <div class="section">
+    <h2>📈 板块四：历史曲线图</h2>
+    
+<div class="chart-container">
+  <h4>FR01: 云巨头 CAPEX</h4>
+  <p class="chart-placeholder">图表数据不足</p>
+</div>
+
+<div class="chart-container">
+  <h4>FR02: CoWoS 交期</h4>
+  <p class="chart-placeholder">图表数据不足</p>
+</div>
+
+<div class="chart-container">
+  <h4>FR03: DDR5 价格剪刀差</h4>
+  <p class="chart-placeholder">图表数据不足</p>
+</div>
+
+<div class="chart-container">
+  <h4>FR04: OEM库存周转</h4>
+  <p class="chart-placeholder">图表数据不足</p>
+</div>
+
+<div class="chart-container">
+  <h4>FR05: 容量降级舆情</h4>
+  <p class="chart-placeholder">图表数据不足</p>
+</div>
+
+<div class="chart-container">
+  <h4>FR06: 韩国半导体出口</h4>
+  <p class="chart-placeholder">图表数据不足</p>
+</div>
+
+<div class="chart-container">
+  <h4>FR07: 量价背离</h4>
+  <p class="chart-placeholder">图表数据不足</p>
+</div>
+  </div>
+
+  <div class="section">
+    <h2>📰 板块五：新闻源明细</h2>
+    
+<div class="news-section">
+  <h3>FR02: CoWoS 交期 新闻</h3>
+  
+        <div class="news-item">
+          <span class="source-tag">✅ 可信源</span>
+          <span class="news-title">Commentary: The Thucydides trap and TSMC's COUPE</span>
+          <span class="news-meta">[DigiTimes] Fri, 15 Ma</span>
+          <p class="news-summary">On May 14, Xi Jinping opened his summit with Donald Trump in Beijing by invoking the Thucydides Trap &mdash; the idea that a rising power and an established hegemon are structurally destined for confl</p>
+        </div>
+</div>
+<div class="news-section">
+  <h3>FR05: 容量降级舆情 新闻</h3>
+  
+        <div class="news-item">
+          <span class="source-tag">✅ 可信源</span>
+          <span class="news-title">China's memory push accelerates as YMTC and CXMT expand DRAM ambitions</span>
+          <span class="news-meta">[DigiTimes] Sat, 16 Ma</span>
+          <p class="news-summary">China's memory semiconductor industry is entering a new phase of expansion as leading domestic players ramp up investments in both NAND flash and DRAM technologies, amid an AI-driven global memory boo</p>
+        </div>
+</div>
+  </div>
+
+  <div class="section">
+    
+<div class="system-status">
+  <h2>🖥️ 系统状态</h2>
+  <table class="health-table">
+    <tr><th>数据源</th><th>状态</th></tr>
+    <tr><td>FR01</td><td>✅ ok</td></tr><tr><td>FR02</td><td>✅ ok</td></tr><tr><td>FR03</td><td>✅ ok</td></tr><tr><td>FR04</td><td>✅ ok</td></tr><tr><td>FR05</td><td>✅ ok</td></tr><tr><td>FR06</td><td>✅ ok</td></tr><tr><td>FR07</td><td>✅ ok</td></tr>
+  </table>
+  <p>版本号: v2.2</p>
+  <p class="disclaimer">⚠️ 免责声明：本系统仅供研究参考，不构成投资建议。</p>
+</div>
+  </div>
+
+  <script>
+    function renderChart(canvasId, chartData) {
+      const ctx = document.getElementById(canvasId);
+      if (!ctx) return;
+      new Chart(ctx, {
+        type: 'line',
+        data: chartData,
+        options: {
+          responsive: true,
+          scales: {
+            x: { grid: { display: false } },
+            y: { beginAtZero: false }
+          },
+          plugins: { legend: { position: 'top' } }
+        }
+      });
+    }
+  </script>
+</body>
+</html>
